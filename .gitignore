@@ -1,0 +1,44 @@
+# Distribuciones y salidas de compilación.
+/dist/
+/build/
+/out/
+/artifacts/
+**/bin/
+**/obj/
+
+# Pruebas y cobertura.
+**/TestResults/
+**/coverage/
+*.coverage
+*.coveragexml
+/tests/**/*.exe
+/tests/**/*.dll
+/tests/**/*.pdb
+
+# Configuración local de herramientas.
+.vs/
+.vscode/
+.idea/
+.local/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Variables de entorno locales.
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Temporales y registros.
+*.log
+*.tmp
+*.temp
+*.bak
+*~
+
+# Archivos del sistema operativo.
+.DS_Store
+Thumbs.db
+Desktop.ini
