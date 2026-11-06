@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net48</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
     <ApplicationIcon>..\..\packaging\windows\Trazo.ico</ApplicationIcon>
@@ -13,7 +13,13 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="zxing">
+      <HintPath>..\..\third_party\ZXing.Net\0.16.11\zxing.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Compile Include="**\*.cs" Exclude="bin\**;obj\**" />
     <None Update="Trazo.exe.config" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\third_party\ZXing.Net\0.16.11\LICENSE.txt" Link="licenses\ZXing.Net\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\third_party\ZXing.Net\0.16.11\provenance.json" Link="licenses\ZXing.Net\provenance.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

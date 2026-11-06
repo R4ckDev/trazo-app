@@ -1,7 +1,7 @@
 param(
-    [string]$BinaryDirectory=(Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'dist\windows\app'),
+    [string]$BinaryDirectory=(Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'build\windows\app'),
     [string]$CompilerPath=$env:INNO_SETUP_COMPILER,
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='0.2.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version='0.4.0',
     [switch]$QaBuild
 )
 

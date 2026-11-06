@@ -11,7 +11,7 @@ Trabaja en Windows con Git y .NET Framework 4.8. Desde la raíz del repositorio:
 .\scripts\test.ps1
 ```
 
-El ejecutable de desarrollo queda en `dist/windows/app/Trazo.exe` y las pruebas en `dist/windows/tests/`. Los scripts utilizan el compilador C# incluido con .NET Framework y no descargan paquetes. Abre `Trazo.sln` para trabajar con el SDK de .NET 9 y Windows Forms.
+El ejecutable de desarrollo queda en `build/windows/app/Trazo.exe` y las pruebas en `build/windows/tests/`. Los scripts utilizan el compilador C# incluido con .NET Framework y la dependencia ZXing.Net fijada en `third_party`, sin descargar paquetes. La solución utiliza Windows Forms y .NET Framework 4.8.
 
 ## Generar los paquetes de Windows
 

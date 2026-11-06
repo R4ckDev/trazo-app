@@ -28,6 +28,7 @@ namespace Trazo
         private readonly CaptureHistoryStore historyStore;
         private readonly bool previewMode;
         private readonly List<DashboardButton> selectionActions=new List<DashboardButton>();
+        private readonly List<FloatingCaptureForm> floatingCaptures=new List<FloatingCaptureForm>();
         private AppSettings appSettings;
         private CaptureRecord selectedRecord;
         private IntPtr keyboardHook;
@@ -47,15 +48,16 @@ namespace Trazo
         {
             this.captureRequest=captureRequest;this.previewMode=previewMode;appSettings=settings.Clone();this.historyDirectory=historyDirectory;
             shortcutSettings=previewMode?ShortcutSettings.CreateDefault():ShortcutSettings.Load();historyStore=new CaptureHistoryStore(historyDirectory);
-            Text="Trazo";StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.None;
-            ClientSize=new Size(980,620);MinimumSize=new Size(780,520);AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;
+            Text="Trazo · v"+Application.ProductVersion;StartPosition=FormStartPosition.CenterScreen;FormBorderStyle=FormBorderStyle.None;
+            ClientSize=new Size(1180,760);MinimumSize=new Size(780,520);AutoScaleDimensions=new SizeF(96,96);AutoScaleMode=AutoScaleMode.Dpi;
+            Padding=new Padding(ResizeBorderWidth);
             BackColor=Color.FromArgb(245,246,250);Font=new Font("Segoe UI",10);ownIcon=CreateIcon();Icon=ownIcon;
             MaximizedBounds=Screen.FromControl(this).WorkingArea;
 
             Panel header=new Panel{Dock=DockStyle.Top,Height=42,BackColor=Blue};
             PictureBox mark=new PictureBox{Image=ownIcon.ToBitmap(),SizeMode=PictureBoxSizeMode.CenterImage,Dock=DockStyle.Left,Width=45};header.Controls.Add(mark);
             Label brand=new Label{Text="Trazo",Font=new Font("Segoe UI",12),ForeColor=Color.White,TextAlign=ContentAlignment.MiddleLeft,Dock=DockStyle.Left,Width=100};header.Controls.Add(brand);brand.BringToFront();
-            Label caption=new Label{Text="Capturas de pantalla",ForeColor=Color.White,TextAlign=ContentAlignment.MiddleCenter,Dock=DockStyle.Fill};header.Controls.Add(caption);caption.BringToFront();
+            Label caption=new Label{Text="Capturas de pantalla · v"+Application.ProductVersion,ForeColor=Color.White,TextAlign=ContentAlignment.MiddleCenter,Dock=DockStyle.Fill};header.Controls.Add(caption);caption.BringToFront();
             FlowLayoutPanel frameButtons=new FlowLayoutPanel{Dock=DockStyle.Right,Width=126,FlowDirection=FlowDirection.LeftToRight,WrapContents=false,Margin=Padding.Empty,Padding=Padding.Empty,BackColor=Blue};
             Button minimize=FrameButton("—");minimize.Click+=delegate{WindowState=FormWindowState.Minimized;};frameButtons.Controls.Add(minimize);
             Button maximize=FrameButton("□");maximize.Click+=delegate{ToggleMaximize();};frameButtons.Controls.Add(maximize);
@@ -70,6 +72,7 @@ namespace Trazo
 
             FlowLayoutPanel toolbar=new FlowLayoutPanel{Dock=DockStyle.Top,Height=60,BackColor=Color.White,Padding=new Padding(18,10,14,8),WrapContents=false};
             AddToolbarAction(toolbar,"capture","Capturar pantalla",delegate{BeginCapture(true);},172);
+            AddToolbarAction(toolbar,"barcode","Leer QR y barras",delegate{BeginCapture(true,true);},184);
             AddToolbarAction(toolbar,"project","Abrir proyecto",OpenProject,155);
             AddToolbarAction(toolbar,"settings","Configuración",ConfigureSettings,155);
             Label section=new Label{Text="CAPTURAS RECIENTES",Dock=DockStyle.Top,Height=35,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(25,0,0,0),ForeColor=Color.FromArgb(103,116,130),Font=new Font("Segoe UI",9,FontStyle.Bold)};
@@ -92,11 +95,11 @@ namespace Trazo
             shortcutStatus=new Label{Dock=DockStyle.Bottom,Height=24,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(25,0,0,0),ForeColor=Color.FromArgb(115,125,137),Font=new Font("Segoe UI",8.5f)};
             Controls.Add(content);Controls.Add(footer);Controls.Add(shortcutStatus);Controls.Add(section);Controls.Add(toolbar);Controls.Add(header);
 
-            trayMenu=new ContextMenuStrip();trayMenu.Items.Add("Capturar pantalla",null,delegate{BeginCapture(false);});trayMenu.Items.Add("Mostrar Trazo",null,delegate{ShowMain();});trayMenu.Items.Add("Configuración…",null,delegate{ConfigureSettings();});trayMenu.Items.Add("Abrir proyecto…",null,delegate{OpenProject();});trayMenu.Items.Add(new ToolStripSeparator());trayMenu.Items.Add("Cerrar Trazo",null,delegate{ExitTrazo();});
+            trayMenu=new ContextMenuStrip();trayMenu.Items.Add("Capturar pantalla",null,delegate{BeginCapture(false);});trayMenu.Items.Add("Leer QR y códigos de barras…",null,delegate{BeginCapture(false,true);});trayMenu.Items.Add("Mostrar Trazo",null,delegate{ShowMain();});trayMenu.Items.Add("Configuración…",null,delegate{ConfigureSettings();});trayMenu.Items.Add("Abrir proyecto…",null,delegate{OpenProject();});trayMenu.Items.Add(new ToolStripSeparator());trayMenu.Items.Add("Cerrar Trazo",null,delegate{ExitTrazo();});
             tray=new NotifyIcon{Icon=ownIcon,Text="Trazo · Capturar pantalla",Visible=!previewMode,ContextMenuStrip=trayMenu};tray.DoubleClick+=delegate{ShowMain();};
             hookCallback=KeyboardHook;requestTimer=new System.Windows.Forms.Timer{Interval=180};requestTimer.Tick+=delegate{if(captureRequest!=null&&captureRequest.WaitOne(0))BeginCapture(false);};
-            Shown+=delegate{if(!previewMode){InstallShortcut();requestTimer.Start();}};
-            FormClosing+=OnClosing;Resize+=delegate{if(!previewMode&&WindowState==FormWindowState.Minimized)HideToTray(false);};
+            Shown+=delegate{if(!previewMode){Rectangle work=Screen.FromControl(this).WorkingArea;if(Width>work.Width||Height>work.Height){Size=new Size(Math.Min(Width,work.Width),Math.Min(Height,work.Height));Location=new Point(work.Left+(work.Width-Width)/2,work.Top+(work.Height-Height)/2);}InstallShortcut();requestTimer.Start();}};
+            FormClosing+=OnClosing;Resize+=delegate{Padding=WindowState==FormWindowState.Maximized?Padding.Empty:new Padding(ResizeBorderWidth);if(!previewMode&&WindowState==FormWindowState.Minimized)HideToTray(false);};
             RefreshHistory();
         }
         private Button FrameButton(string text)
@@ -104,6 +107,7 @@ namespace Trazo
             Button b=new Button{Text=text,Size=new Size(42,42),FlatStyle=FlatStyle.Flat,BackColor=Blue,ForeColor=Color.White,Font=new Font("Segoe UI",15),Margin=Padding.Empty,TabStop=false};b.FlatAppearance.BorderSize=0;b.FlatAppearance.MouseOverBackColor=Color.FromArgb(0,145,235);return b;
         }
         private void ToggleMaximize(){MaximizedBounds=Screen.FromControl(this).WorkingArea;WindowState=WindowState==FormWindowState.Maximized?FormWindowState.Normal:FormWindowState.Maximized;}
+        private int ResizeBorderWidth {get{return Math.Max(8,(int)Math.Round(8*DeviceDpi/96.0));}}
         private void AddToolbarAction(FlowLayoutPanel panel,string glyph,string text,Action action,int width)
         {DashboardButton button=new DashboardButton(glyph,text){Size=new Size(width,38),Margin=new Padding(0,0,8,0)};button.Click+=delegate{action();};panel.Controls.Add(button);}
         private void AddSelectionAction(FlowLayoutPanel panel,string glyph,string hint,Action action)
@@ -117,7 +121,7 @@ namespace Trazo
             try
             {
                 using(ProjectData data=ProjectStore.Load(path))
-                {Hide();using(OverlayForm overlay=new OverlayForm(data)){PrepareOverlay(overlay);overlay.ShowDialog();}}
+                {Hide();using(OverlayForm overlay=new OverlayForm(data)){ShowEditor(overlay);}}
             }
             catch(Exception error){MessageBox.Show(this,"No se pudo abrir el proyecto.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
             finally{capturing=false;if(!previewMode&&!exiting&&!IsDisposed){InstallShortcut();ShowMain();}}
@@ -136,7 +140,7 @@ namespace Trazo
             catch(Exception error){entries=new List<CaptureRecord>();shortcutStatus.Text="No se pudo abrir el historial: "+error.Message;}
             foreach(CaptureRecord record in entries)
             {
-                CaptureTile tile=new CaptureTile(record);tile.Click+=delegate{SelectRecord(record);};tile.DoubleClick+=delegate{SelectRecord(record);PreviewSelected();};gallery.Controls.Add(tile);
+                CaptureTile tile=new CaptureTile(record);tile.Click+=delegate{SelectRecord(record);PreviewSelected();};gallery.Controls.Add(tile);
                 if(record.Id==previous)selectedRecord=record;
             }
             if(selectedRecord==null&&entries.Count>0)selectedRecord=entries[0];
@@ -150,18 +154,53 @@ namespace Trazo
         private void PrepareOverlay(OverlayForm overlay)
         {
             overlay.DefaultSaveDirectory=appSettings.SaveDirectory;overlay.DefaultImageFormat=appSettings.ImageFormat;
-            overlay.ImageExported+=delegate(Bitmap image)
-            {
-                if(!appSettings.HistoryEnabled)return;
-                try{historyStore.Add(image,appSettings.HistoryLimit);RefreshHistory();}
-                catch(Exception error){if(!previewMode)tray.ShowBalloonTip(5000,"Trazo · Historial","La captura terminó, pero no se pudo guardar en el historial: "+error.Message,ToolTipIcon.Warning);}
-            };
+            overlay.ImageExported+=StoreCaptureHistory;
+        }
+        private void StoreCaptureHistory(Bitmap image)
+        {
+            if(!appSettings.HistoryEnabled)return;
+            try{historyStore.Add(image,appSettings.HistoryLimit);RefreshHistory();}
+            catch(Exception error){if(!previewMode)tray.ShowBalloonTip(5000,"Trazo · Historial","La captura terminó, pero no se pudo guardar en el historial: "+error.Message,ToolTipIcon.Warning);}
         }
         private void PreviewSelected()
         {
             CaptureRecord record=selectedRecord;if(record==null)return;
-            try{using(CapturePreviewForm preview=new CapturePreviewForm(record)){if(preview.ShowDialog(this)==DialogResult.Yes)EditRecord(record);}}
+            Bitmap pinned=null;
+            try
+            {
+                bool edit;Rectangle work=Rectangle.Empty;
+                using(CapturePreviewForm preview=new CapturePreviewForm(record))
+                {edit=preview.ShowDialog(this)==DialogResult.Yes;if(preview.PinRequested){pinned=preview.CreateImageSnapshot();work=preview.PinWorkingArea;}}
+                if(edit)EditRecord(record);else if(pinned!=null)ShowFloatingCapture(pinned,work);
+            }
             catch(Exception error){MessageBox.Show(this,"No se pudo abrir la captura.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);RefreshHistory();}
+            finally{if(pinned!=null)pinned.Dispose();}
+        }
+        private FloatingCaptureForm CreateFloatingCapture(Bitmap image,Rectangle workingArea)
+        {
+            FloatingCaptureForm floating=new FloatingCaptureForm(image,workingArea);floatingCaptures.Add(floating);
+            floating.Disposed+=delegate{floatingCaptures.Remove(floating);};return floating;
+        }
+        private void ShowFloatingCapture(Bitmap image,Rectangle workingArea)
+        {
+            if(exiting||IsDisposed)return;
+            FloatingCaptureForm floating=CreateFloatingCapture(image,workingArea);
+            try{floating.Show();}catch{floating.Dispose();throw;}
+        }
+        private List<FloatingCaptureForm> HideFloatingCaptures()
+        {
+            List<FloatingCaptureForm> visible=new List<FloatingCaptureForm>();
+            foreach(FloatingCaptureForm floating in floatingCaptures.ToArray())if(!floating.IsDisposed&&floating.Visible){visible.Add(floating);floating.Hide();}
+            return visible;
+        }
+        private void RestoreFloatingCaptures(List<FloatingCaptureForm> visible)
+        {if(exiting||IsDisposed)return;foreach(FloatingCaptureForm floating in visible)if(!floating.IsDisposed)floating.Show();}
+        private void ShowEditor(OverlayForm overlay)
+        {
+            List<FloatingCaptureForm> hidden=HideFloatingCaptures();
+            try{PrepareOverlay(overlay);overlay.ShowDialog();}finally{RestoreFloatingCaptures(hidden);}
+            if(overlay.CodeImage!=null){using(BarcodeResultsForm reader=new BarcodeResultsForm(overlay.CodeImage))reader.ShowDialog(this);}
+            if(overlay.PinnedImage!=null)ShowFloatingCapture(overlay.PinnedImage,overlay.PinWorkingArea);
         }
         private void EditSelected(){if(selectedRecord!=null)EditRecord(selectedRecord);}
         private void EditRecord(CaptureRecord record)
@@ -173,7 +212,7 @@ namespace Trazo
                 {
                     using(Image file=Image.FromFile(record.FullPath))data.Screenshot=new Bitmap(file);
                     data.Selection=new Rectangle(Point.Empty,data.Screenshot.Size);data.VirtualBounds=new Rectangle(Point.Empty,data.Screenshot.Size);data.Annotations=new Annotation[0];data.Effects=new ExportOptions();
-                    Hide();using(OverlayForm editor=new OverlayForm(data)){PrepareOverlay(editor);editor.ShowDialog();}
+                    Hide();using(OverlayForm editor=new OverlayForm(data)){ShowEditor(editor);}
                 }
             }
             catch(Exception error){MessageBox.Show(this,"No se pudo editar la captura.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
@@ -325,7 +364,8 @@ namespace Trazo
             if(message.Msg==0x0084&&WindowState==FormWindowState.Normal)
             {
                 Point p=PointToClient(new Point((short)(message.LParam.ToInt64()&0xffff),(short)((message.LParam.ToInt64()>>16)&0xffff)));
-                bool left=p.X<7,right=p.X>=ClientSize.Width-7,top=p.Y<7,bottom=p.Y>=ClientSize.Height-7;
+                int border=ResizeBorderWidth;
+                bool left=p.X>=0&&p.X<border,right=p.X<ClientSize.Width&&p.X>=ClientSize.Width-border,top=p.Y>=0&&p.Y<border,bottom=p.Y<ClientSize.Height&&p.Y>=ClientSize.Height-border;
                 int hit=left&&top?13:right&&top?14:left&&bottom?16:right&&bottom?17:left?10:right?11:top?12:bottom?15:0;
                 if(hit!=0){message.Result=new IntPtr(hit);return;}
             }
@@ -337,13 +377,15 @@ namespace Trazo
             base.WndProc(ref message);
         }
 
-        internal void BeginCapture(bool restoreMain)
+        internal void BeginCapture(bool restoreMain){BeginCapture(restoreMain,false);}
+        private void BeginCapture(bool restoreMain,bool codes)
         {
             if (capturing || configuringShortcuts || exiting || IsDisposed) return;
             capturing = true;
             UnregisterFallbacks();
             bool showAfter = restoreMain && Visible && WindowState != FormWindowState.Minimized;
-            if(appSettings.HideMainDuringCapture)Hide();
+            if(codes||appSettings.HideMainDuringCapture)Hide();
+            List<FloatingCaptureForm> hiddenFloating=HideFloatingCaptures();
             System.Windows.Forms.Timer delay = new System.Windows.Forms.Timer { Interval = 180 };
             delay.Tick += delegate
             {
@@ -359,9 +401,9 @@ namespace Trazo
                     {
                         using (Graphics graphics = Graphics.FromImage(screenshot))
                             graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
-                        using (OverlayForm overlay = new OverlayForm(screenshot, bounds, windows))
+                        using (OverlayForm overlay = new OverlayForm(screenshot, bounds, windows,codes))
                         {
-                            PrepareOverlay(overlay);overlay.ShowDialog();
+                            ShowEditor(overlay);
                         }
                     }
                 }
@@ -373,13 +415,13 @@ namespace Trazo
                 finally
                 {
                     capturing = false;
+                    RestoreFloatingCaptures(hiddenFloating);
                     if(!exiting&&!IsDisposed)InstallShortcut();
                     if (showAfter && !exiting && !IsDisposed) ShowMain();
                 }
             };
             delay.Start();
         }
-
         internal void OpenProject()
         {
             if (capturing || configuringShortcuts || exiting || IsDisposed) return;
@@ -399,7 +441,7 @@ namespace Trazo
                         Hide();
                         using (OverlayForm overlay = new OverlayForm(data))
                         {
-                            PrepareOverlay(overlay);overlay.ShowDialog();
+                            ShowEditor(overlay);
                         }
                     }
                 }
@@ -420,7 +462,7 @@ namespace Trazo
         {
             if (capturing || exiting || IsDisposed) return;
             Show();
-            WindowState = FormWindowState.Normal;
+            if(WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;
             Activate();
         }
 
@@ -463,6 +505,7 @@ namespace Trazo
             {
                 disposed = true;
                 exiting = true;
+                foreach(FloatingCaptureForm floating in floatingCaptures.ToArray())floating.Dispose();floatingCaptures.Clear();
                 if (keyboardHook != IntPtr.Zero) { Native.UnhookWindowsHookEx(keyboardHook); keyboardHook = IntPtr.Zero; }
                 UnregisterFallbacks();
                 requestTimer.Stop();
@@ -507,7 +550,7 @@ namespace Trazo
         internal DashboardButton(string glyph,string text)
         {
             this.glyph=glyph;Text=text;Cursor=Cursors.Hand;TabStop=true;AccessibleName=String.IsNullOrEmpty(text)?glyph:text;AccessibleRole=AccessibleRole.PushButton;
-            Font=new Font("Segoe UI",10);SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.Selectable,true);
+            Font=new Font("Segoe UI",10,glyph=="barcode"?FontStyle.Bold:FontStyle.Regular);SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.Selectable,true);
         }
         protected override void OnMouseEnter(EventArgs e){hover=true;Invalidate();base.OnMouseEnter(e);}
         protected override void OnMouseLeave(EventArgs e){hover=false;Invalidate();base.OnMouseLeave(e);}
@@ -516,8 +559,9 @@ namespace Trazo
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;g.Clear(Parent==null?Color.White:Parent.BackColor);
+            if(glyph=="barcode"&&Enabled)using(Brush shade=new SolidBrush(Color.FromArgb(228,243,255)))g.FillRectangle(shade,0,0,Width,Height);
             if(hover&&Enabled)using(Brush shade=new SolidBrush(Color.FromArgb(231,245,253)))g.FillRectangle(shade,0,0,Width,Height);
-            Color color=Enabled?(hover?Color.FromArgb(0,150,235):Color.FromArgb(92,106,120)):Color.FromArgb(178,186,194);
+            Color color=Enabled?(hover||glyph=="barcode"?Color.FromArgb(0,150,235):Color.FromArgb(92,106,120)):Color.FromArgb(178,186,194);
             float x=String.IsNullOrEmpty(Text)?(Width-23)/2f:11,y=(Height-23)/2f;
             GraphicsState state=g.Save();g.TranslateTransform(x,y);
             using(Pen p=new Pen(color,1.5f))using(Brush b=new SolidBrush(color))
@@ -526,6 +570,7 @@ namespace Trazo
                 switch(glyph)
                 {
                     case "capture":g.DrawRectangle(p,3,4,17,14);g.DrawLine(p,8,1,8,7);g.DrawLine(p,0,9,6,9);g.DrawLine(p,17,15,23,15);g.DrawLine(p,15,18,15,22);break;
+                    case "barcode":for(int barX=4;barX<=20;barX+=3)g.DrawLine(p,barX,4,barX,20);g.DrawLine(p,2,11,22,11);break;
                     case "project":g.DrawRectangle(p,4,3,15,17);g.DrawLine(p,7,8,16,8);g.DrawLine(p,7,12,16,12);g.DrawLine(p,7,16,12,16);break;
                     case "settings":g.DrawEllipse(p,5,5,13,13);g.DrawEllipse(p,9,9,5,5);for(int i=0;i<8;i++){double a=i*Math.PI/4;g.DrawLine(p,11.5f+(float)Math.Cos(a)*7,11.5f+(float)Math.Sin(a)*7,11.5f+(float)Math.Cos(a)*10,11.5f+(float)Math.Sin(a)*10);}break;
                     case "eye":g.DrawBezier(p,1,11,7,2,16,2,22,11);g.DrawBezier(p,1,11,7,20,16,20,22,11);g.DrawEllipse(p,8,7,7,7);break;
@@ -569,26 +614,26 @@ namespace Trazo
         internal bool Selected;
         internal CaptureTile(CaptureRecord record)
         {
-            Record=record;Size=new Size(218,182);Margin=new Padding(8);Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ListItem;AccessibleName="Captura "+record.CreatedUtc.ToLocalTime().ToString("dd MMM yyyy HH:mm");
+            Record=record;Size=new Size(250,202);Margin=new Padding(8);Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ListItem;AccessibleName="Abrir captura "+record.CreatedUtc.ToLocalTime().ToString("dd MMM yyyy HH:mm");
             SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.StandardDoubleClick,true);
             try
             {
-                thumbnail=new Bitmap(202,122);
+                thumbnail=new Bitmap(234,142);
                 using(Graphics g=Graphics.FromImage(thumbnail))using(Image source=Image.FromFile(record.FullPath))
                 {
                     g.Clear(Color.FromArgb(242,245,249));g.InterpolationMode=InterpolationMode.HighQualityBicubic;
-                    double scale=Math.Min(202.0/source.Width,122.0/source.Height);int w=Math.Max(1,(int)(source.Width*scale)),h=Math.Max(1,(int)(source.Height*scale));g.DrawImage(source,(202-w)/2,(122-h)/2,w,h);
+                    double scale=Math.Min(234.0/source.Width,142.0/source.Height);int w=Math.Max(1,(int)(source.Width*scale)),h=Math.Max(1,(int)(source.Height*scale));g.DrawImage(source,(234-w)/2,(142-h)/2,w,h);
                 }
             }
             catch{if(thumbnail!=null){thumbnail.Dispose();thumbnail=null;}}
         }
         protected override void OnPaint(PaintEventArgs e)
         {
-            Graphics g=e.Graphics;g.Clear(Color.White);using(Brush back=new SolidBrush(Color.FromArgb(243,246,249)))g.FillRectangle(back,8,8,202,122);
+            Graphics g=e.Graphics;g.Clear(Color.White);using(Brush back=new SolidBrush(Color.FromArgb(243,246,249)))g.FillRectangle(back,8,8,234,142);
             if(thumbnail!=null)g.DrawImageUnscaled(thumbnail,8,8);
             using(Pen p=new Pen(Selected?Color.FromArgb(0,163,255):Color.FromArgb(225,231,237),Selected?2:1))g.DrawRectangle(p,1,1,Width-3,Height-3);
-            using(Font date=new Font("Segoe UI",9))TextRenderer.DrawText(g,Record.CreatedUtc.ToLocalTime().ToString("dd MMM yyyy · HH:mm"),date,new Rectangle(9,139,200,20),Color.FromArgb(61,77,94),TextFormatFlags.Left|TextFormatFlags.EndEllipsis);
-            using(Font size=new Font("Segoe UI",8))TextRenderer.DrawText(g,Record.Width+" × "+Record.Height,size,new Rectangle(9,159,200,18),Color.FromArgb(143,154,166));
+            using(Font date=new Font("Segoe UI",10))TextRenderer.DrawText(g,Record.CreatedUtc.ToLocalTime().ToString("dd MMM yyyy · HH:mm"),date,new Rectangle(9,157,232,23),Color.FromArgb(61,77,94),TextFormatFlags.Left|TextFormatFlags.EndEllipsis);
+            using(Font size=new Font("Segoe UI",9))TextRenderer.DrawText(g,Record.Width+" × "+Record.Height,size,new Rectangle(9,181,232,20),Color.FromArgb(143,154,166));
         }
         protected override void Dispose(bool disposing){if(disposing&&thumbnail!=null)thumbnail.Dispose();base.Dispose(disposing);}
     }

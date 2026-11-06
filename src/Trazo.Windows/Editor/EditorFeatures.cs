@@ -58,9 +58,11 @@ namespace Trazo
         private void UpdateHoverRegion()
         {
             if(ready)return;
+            if(captureConstraint.Mode==CaptureSizeMode.Exact){hoverRegion=captureConstraint.FromDrag(pointer,pointer,screenshot.Size);return;}
             if(captureWindows.Length==0){hoverRegion=Rectangle.Empty;return;}
             Rectangle r=WindowDetection.FindAt(captureWindows,new Point(Left+pointer.X,Top+pointer.Y),new Rectangle(Location,screenshot.Size));
             r.Offset(-Left,-Top);hoverRegion=Rectangle.Intersect(new Rectangle(Point.Empty,screenshot.Size),r);
+            if(captureConstraint.Mode==CaptureSizeMode.Ratio&&hoverRegion.Width>0&&hoverRegion.Height>0)hoverRegion=captureConstraint.Apply(hoverRegion,screenshot.Size);
         }
         private static Point[] ObjectHandles(Rectangle r)
         {return new Point[]{new Point(r.Left,r.Top),new Point(r.Left+r.Width/2,r.Top),new Point(r.Right,r.Top),new Point(r.Right,r.Top+r.Height/2),new Point(r.Right,r.Bottom),new Point(r.Left+r.Width/2,r.Bottom),new Point(r.Left,r.Bottom),new Point(r.Left,r.Top+r.Height/2)};}
@@ -278,6 +280,7 @@ namespace Trazo
             bool selected=SelectedAnnotation!=null;
             items.Add(new ToolStripSeparator());
             items.Add("Seleccionar y editar marcas\tV",null,delegate{SetTool(DrawTool.Select);});
+            items.Add("Tamaño y proporción…\tCtrl+G",null,delegate{ShowCaptureSize();});
             items.Add("Duplicar marca\tCtrl+D",null,delegate{DuplicateSelected();}).Enabled=selected;
             items.Add("Eliminar marca\tSupr",null,delegate{DeleteSelected();}).Enabled=selected;
             ToolStripMenuItem layers=new ToolStripMenuItem("Orden de la marca");layers.Enabled=selected;

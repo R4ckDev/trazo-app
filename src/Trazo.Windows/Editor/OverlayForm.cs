@@ -28,15 +28,20 @@ namespace Trazo
         private readonly List<GlyphButton> tools=new List<GlyphButton>();
         private TextBox input;
         private bool exporting;
+        private readonly bool codeSelectionMode;
+        internal Bitmap CodeImage {get;private set;}
+        internal Bitmap PinnedImage {get;private set;}
+        internal Rectangle PinWorkingArea {get;private set;}
         internal event Action<Bitmap> ImageExported;
         internal string DefaultSaveDirectory;
         internal string DefaultImageFormat="PNG";
         internal static readonly Color Blue=Color.FromArgb(42,163,221);
 
         internal OverlayForm(Bitmap image, Rectangle virtualBounds) : this(image,virtualBounds,new CaptureWindow[0]) { }
-        internal OverlayForm(Bitmap image, Rectangle virtualBounds, CaptureWindow[] windows)
+        internal OverlayForm(Bitmap image, Rectangle virtualBounds, CaptureWindow[] windows) : this(image,virtualBounds,windows,false) { }
+        internal OverlayForm(Bitmap image, Rectangle virtualBounds, CaptureWindow[] windows,bool codeSelectionMode)
         {
-            screenshot=image;
+            screenshot=image;this.codeSelectionMode=codeSelectionMode;
             captureWindows=windows ?? new CaptureWindow[0];
             AutoScaleMode=AutoScaleMode.None; FormBorderStyle=FormBorderStyle.None;
             StartPosition=FormStartPosition.Manual; Bounds=virtualBounds; TopMost=true;
@@ -72,9 +77,15 @@ namespace Trazo
             AddButton(operbar,"capture","Volver a seleccionar",ResetSelection,true);
             AddButton(operbar,"fullscreen","Seleccionar toda la pantalla (Ctrl+A)",FullScreen,true);
             AddSeparator(operbar,true);
-            AddButton(operbar,"copy","Copiar y terminar (Ctrl+C / Enter)",CopyImage,true);
-            AddButton(operbar,"more","Más: imágenes, capas, proyectos y efectos",ShowEditorMenu,true);
+            if(codeSelectionMode)AddButton(operbar,"barcode","Leer QR y códigos de barras (Enter)",ReadCodes,true);
+            else
+            {
+                AddButton(operbar,"copy","Copiar y terminar (Ctrl+C / Enter)",CopyImage,true);
+                AddButton(operbar,"pin","Fijar en pantalla (Ctrl+Mayús+P)",PinImage,true);
+                AddButton(operbar,"more","Más: imágenes, capas, proyectos y efectos",ShowEditorMenu,true);
+            }
             BuildConfig();
+            InitializeCaptureSizing();
             Shown+=delegate{ UpdateHoverRegion();PlaceBars();Activate(); Focus(); };
         }
 
@@ -135,6 +146,7 @@ namespace Trazo
         }
         private void PlaceBars()
         {
+            PlaceSizeButton();
             if(!ready){drawbar.Hide();operbar.Hide();config.Hide();return;}
             Rectangle viewport=Screen.FromPoint(new Point(Left+selection.Right-1,Top+selection.Bottom-1)).Bounds;
             viewport.Offset(-Left,-Top);viewport.Intersect(ClientRectangle);
@@ -154,6 +166,7 @@ namespace Trazo
             operbar.Location=new Point(ox,oy);
             if(operbar.Bounds.IntersectsWith(drawbar.Bounds))operbar.Top=Math.Max(viewport.Top+3,drawbar.Top-operbar.Height-5);
             drawbar.Show();operbar.Show();drawbar.BringToFront();operbar.BringToFront();config.BringToFront();
+            if(codeSelectionMode){drawbar.Hide();config.Hide();}
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -184,7 +197,7 @@ namespace Trazo
             if(!ready&&dragMode==0)
             {
                 Rectangle screen=Screen.FromPoint(new Point(Left+pointer.X,Top+pointer.Y)).Bounds;screen.Offset(-Left,-Top);
-                string hint="Trazo   ·   Clic para capturar una ventana o arrastra un área   ·   Esc para cancelar";
+                string hint=codeSelectionMode?"Trazo · Selecciona el código completo con su margen · Enter para leer · Esc para cancelar":"Trazo   ·   Clic para capturar una ventana o arrastra un área   ·   Esc para cancelar";
                 Size s=TextRenderer.MeasureText(hint,Font);Rectangle r=new Rectangle(screen.Left+(screen.Width-s.Width-32)/2,screen.Top+26,s.Width+32,36);
                 using(Brush b=new SolidBrush(Color.FromArgb(225,35,43,53)))g.FillRectangle(b,r);
                 TextRenderer.DrawText(g,hint,Font,r,Color.White,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);
@@ -210,23 +223,23 @@ namespace Trazo
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);CommitText();Focus();pointer=Clamp(e.Location);
-            if(e.Button==MouseButtons.Right){if(!ready)Close();else ShowContext(e.Location);return;}
+            if(e.Button==MouseButtons.Right){if(!ready)Close();else if(!codeSelectionMode)ShowContext(e.Location);return;}
             if(e.Button!=MouseButtons.Left)return;
             if(ready&&tool==DrawTool.Select&&BeginObjectEdit(pointer))return;
             anchor=pointer;original=selection;
-            if(ready&&(resizeHandle=HitHandle(pointer))>=0){dragMode=3;}
+            if(ready&&(resizeHandle=HitHandle(pointer))>=0){dragMode=captureConstraint.Mode==CaptureSizeMode.Exact?2:3;}
             else if(!ready){UpdateHoverRegion();clickCandidate=hoverRegion;selection=new Rectangle(pointer,Size.Empty);dragMode=1;}
             else if(!selection.Contains(pointer))return;
             else if(tool==DrawTool.Select){selectedId=null;dragMode=2;}
             else if(tool==DrawTool.Text){StartText(pointer);return;}
             else {pending=new Annotation();pending.Tool=tool;pending.Start=pointer;pending.End=pointer;pending.Color=ink;pending.Width=lineWidth;pending.Points.Add(pointer);dragMode=4;}
-            Capture=true;drawbar.Hide();operbar.Hide();config.Hide();Invalidate();
+            Capture=true;drawbar.Hide();operbar.Hide();config.Hide();sizeButton.Hide();readCodesButton.Hide();Invalidate();
         }
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);pointer=Clamp(e.Location);
             if(dragMode==0&&!ready)UpdateHoverRegion();
-            if(dragMode==1)selection=Annotation.Between(anchor,ClampEndpoint(e.Location));
+            if(dragMode==1)selection=captureConstraint.FromDrag(anchor,ClampEndpoint(e.Location),screenshot.Size);
             if(dragMode==2){int x=Math.Max(0,Math.Min(screenshot.Width-original.Width,original.X+pointer.X-anchor.X)),y=Math.Max(0,Math.Min(screenshot.Height-original.Height,original.Y+pointer.Y-anchor.Y));selection=new Rectangle(x,y,original.Width,original.Height);}
             if(dragMode==3)
             {
@@ -236,6 +249,7 @@ namespace Trazo
                 if(resizeHandle==0||resizeHandle==1||resizeHandle==2)t=Math.Min(end.Y,b-4);
                 if(resizeHandle==4||resizeHandle==5||resizeHandle==6)b=Math.Max(end.Y,t+4);
                 selection=Rectangle.FromLTRB(l,t,r,b);
+                if(captureConstraint.Mode==CaptureSizeMode.Ratio)selection=captureConstraint.Resize(original,resizeHandle,end,screenshot.Size);
             }
             if(dragMode==5||dragMode==6)UpdateObjectEdit(pointer);
             if(dragMode==4&&pending!=null)
@@ -248,7 +262,9 @@ namespace Trazo
             if(dragMode==0&&ready)
             {
                 int h=tool==DrawTool.Select?HitObjectHandle(pointer):-1;if(h<0)h=HitHandle(pointer);Cursor=h<0?(tool==DrawTool.Select&&selection.Contains(pointer)?Cursors.SizeAll:Cursors.Cross):((h==0||h==4)?Cursors.SizeNWSE:(h==2||h==6)?Cursors.SizeNESW:(h==1||h==5)?Cursors.SizeNS:Cursors.SizeWE);
+                if(captureConstraint.Mode==CaptureSizeMode.Exact&&HitObjectHandle(pointer)<0&&HitHandle(pointer)>=0)Cursor=Cursors.SizeAll;
             }
+            if(dragMode==0&&!ready)PlaceSizeButton();
             if(dragMode!=0||!ready)Invalidate();
         }
         protected override void OnMouseUp(MouseEventArgs e)
@@ -293,7 +309,7 @@ namespace Trazo
         private void Redo(){if(historyIndex+1<history.Count){historyIndex++;Invalidate();}Focus();}
         private void ClearAnnotations(){if(history[historyIndex].Length>0)PushHistory(new Annotation[0]);Focus();}
         private void ResetSelection(){RemoveInput();DisposePreview();foreach(Annotation a in all)a.Dispose();all.Clear();if(pending!=null){pending.Dispose();pending=null;}selectedId=null;selection=Rectangle.Empty;ready=false;tool=DrawTool.Select;history.Clear();history.Add(new Annotation[0]);historyIndex=0;UpdateHoverRegion();PlaceBars();Cursor=Cursors.Cross;Focus();Invalidate();}
-        private void FullScreen(){selection=new Rectangle(0,0,screenshot.Width,screenshot.Height);ready=true;PlaceBars();Focus();Invalidate();}
+        private void FullScreen(){captureConstraint=CaptureSelectionConstraint.Free();selection=new Rectangle(0,0,screenshot.Width,screenshot.Height);ready=true;PlaceBars();Focus();Invalidate();}
         internal Bitmap RenderScene()
         {
             Bitmap scene=screenshot.Clone(new Rectangle(0,0,screenshot.Width,screenshot.Height),PixelFormat.Format32bppArgb);
@@ -311,6 +327,24 @@ namespace Trazo
             if(!ready||exporting)return;CommitText();exporting=true;
             try{using(Bitmap image=RenderSelection()){Clipboard.SetDataObject(image,true,8,80);NotifyImageExported(image);}DialogResult=DialogResult.OK;Close();}
             catch(Exception ex){exporting=false;MessageBox.Show(this,"No se pudo copiar la captura. Intenta otra vez.\n"+ex.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        }
+        private void ReadCodes()
+        {
+            if(!ready||exporting)return;CommitText();exporting=true;
+            try{if(CodeImage!=null)CodeImage.Dispose();CodeImage=RenderSelection();DialogResult=DialogResult.OK;Close();}
+            catch(Exception error){exporting=false;MessageBox.Show(this,"No se pudo preparar la imagen del código.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        }
+        private void PinImage()
+        {
+            if(!ready||exporting)return;CommitText();exporting=true;
+            try
+            {
+                Bitmap result=RenderSelection();
+                if(PinnedImage!=null)PinnedImage.Dispose();PinnedImage=result;
+                PinWorkingArea=Screen.FromPoint(new Point(Left+selection.Left+selection.Width/2,Top+selection.Top+selection.Height/2)).WorkingArea;
+                NotifyImageExported(result);DialogResult=DialogResult.OK;Close();
+            }
+            catch(Exception error){exporting=false;MessageBox.Show(this,"No se pudo fijar la captura.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
         }
         private void SaveImage()
         {
@@ -334,16 +368,25 @@ namespace Trazo
         }
         private void ShowContext(Point p)
         {
-            ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Copiar\tCtrl+C",null,delegate{CopyImage();});menu.Items.Add("Guardar…\tCtrl+S",null,delegate{SaveImage();});menu.Items.Add(new ToolStripSeparator());
+            ContextMenuStrip menu=new ContextMenuStrip();menu.Items.Add("Copiar\tCtrl+C",null,delegate{CopyImage();});menu.Items.Add("Guardar…\tCtrl+S",null,delegate{SaveImage();});menu.Items.Add("Fijar en pantalla\tCtrl+Mayús+P",null,delegate{PinImage();});menu.Items.Add("Leer QR y barras\tCtrl+Mayús+R",null,delegate{ReadCodes();});menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Deshacer\tCtrl+Z",null,delegate{Undo();}).Enabled=historyIndex>0;menu.Items.Add("Rehacer\tCtrl+Y",null,delegate{Redo();}).Enabled=historyIndex+1<history.Count;
             AddEditorMenuItems(menu.Items);
             menu.Items.Add("Volver a seleccionar",null,delegate{ResetSelection();});menu.Items.Add("Cancelar\tEsc",null,delegate{Close();});menu.Closed+=delegate{menu.Dispose();};menu.Show(this,p);
         }
         protected override bool ProcessCmdKey(ref Message msg,Keys keys)
         {
+            if(codeSelectionMode)
+            {
+                if(keys==Keys.Enter){ReadCodes();return true;}if(keys==Keys.Escape){Close();return true;}
+                if(keys==(Keys.Control|Keys.G)){ShowCaptureSize();return true;}if(keys==(Keys.Control|Keys.A)){FullScreen();return true;}
+                return base.ProcessCmdKey(ref msg,keys);
+            }
             if(keys==(Keys.Control|Keys.Shift|Keys.S)){SaveProject();return true;}
             if(keys==(Keys.Control|Keys.S)){SaveImage();return true;}
             if(input!=null)return base.ProcessCmdKey(ref msg,keys);
+            if(keys==(Keys.Control|Keys.Shift|Keys.R)){ReadCodes();return true;}
+            if(keys==(Keys.Control|Keys.Shift|Keys.P)){PinImage();return true;}
+            if(keys==(Keys.Control|Keys.G)){ShowCaptureSize();return true;}
             if(keys==(Keys.Alt|Keys.Left)){PanCanvas(160,0);return true;}
             if(keys==(Keys.Alt|Keys.Right)){PanCanvas(-160,0);return true;}
             if(keys==(Keys.Alt|Keys.Up)){PanCanvas(0,160);return true;}
@@ -367,7 +410,7 @@ namespace Trazo
             return base.ProcessCmdKey(ref msg,keys);
         }
         protected override void Dispose(bool disposing)
-        {if(disposing){DisposePreview();foreach(Annotation a in all)a.Dispose();if(pending!=null)pending.Dispose();if(ownsScreenshot)screenshot.Dispose();tips.Dispose();}base.Dispose(disposing);}
+        {if(disposing){DisposePreview();foreach(Annotation a in all)a.Dispose();if(pending!=null)pending.Dispose();if(ownsScreenshot)screenshot.Dispose();if(PinnedImage!=null){PinnedImage.Dispose();PinnedImage=null;}if(CodeImage!=null){CodeImage.Dispose();CodeImage=null;}tips.Dispose();}base.Dispose(disposing);}
     }
 
     internal sealed class GlyphButton : Control
@@ -405,6 +448,8 @@ namespace Trazo
                     case "capture":g.DrawRectangle(p,4,7,17,12);g.FillRectangle(b,8,4,6,4);using(Pen white=new Pen(Color.White,1.6f)){g.FillRectangle(b,4,7,17,12);g.DrawEllipse(white,10,10,6,6);}break;
                     case "fullscreen":g.DrawRectangle(p,4,5,16,14);g.DrawLines(p,new Point[]{new Point(7,10),new Point(7,8),new Point(10,8)});g.DrawLines(p,new Point[]{new Point(14,16),new Point(17,16),new Point(17,13)});break;
                     case "copy":g.DrawRectangle(p,9,8,11,13);g.DrawLines(p,new Point[]{new Point(16,5),new Point(5,5),new Point(5,17)});break;
+                    case "pin":g.DrawPolygon(p,new Point[]{new Point(10,3),new Point(20,13),new Point(17,14),new Point(14,11),new Point(9,16),new Point(6,13),new Point(11,8),new Point(8,5)});g.DrawLine(p,8,15,3,21);break;
+                    case "barcode":for(int x=4;x<=20;x+=3)g.DrawLine(p,x,5,x,19);g.DrawLine(p,3,11,21,11);break;
                     case "select":g.DrawPolygon(p,new Point[]{new Point(6,4),new Point(6,20),new Point(11,15),new Point(16,20),new Point(19,18),new Point(14,13),new Point(21,11)});break;
                     case "palette":g.DrawEllipse(p,4,4,16,16);using(Brush red=new SolidBrush(Color.Tomato))g.FillEllipse(red,7,7,4,4);using(Brush green=new SolidBrush(Color.LimeGreen))g.FillEllipse(green,13,7,4,4);using(Brush blue=new SolidBrush(Color.DodgerBlue))g.FillEllipse(blue,7,13,4,4);break;
                     default:if(Glyph.StartsWith("dot")){int size=4+Int32.Parse(Glyph.Substring(3))*3;g.FillEllipse(b,12-size/2,12-size/2,size,size);}break;

@@ -1,0 +1,14 @@
+{
+  "package": "ZXing.Net",
+  "version": "0.16.11",
+  "author": "Michael Jahn and ZXing.Net contributors",
+  "license": "Apache-2.0",
+  "project_url": "https://github.com/micjahn/ZXing.Net",
+  "upstream_tag": "v0.16.11.0",
+  "package_url": "https://api.nuget.org/v3-flatcontainer/zxing.net/0.16.11/zxing.net.0.16.11.nupkg",
+  "package_sha256": "7D39234D668E558B3D374D18116ED57021D7C0DF482801F1E1DB4F1DB9314EC3",
+  "binary_member": "lib/net48/zxing.dll",
+  "binary_sha256": "52F00A43F9574A411009899A6236F3EFB5B597FBAE0F3163DFEC9CBB0C1F4D38",
+  "license_source": "https://raw.githubusercontent.com/micjahn/ZXing.Net/v0.16.11.0/COPYING",
+  "modifications": "Unmodified binary extracted from the official NuGet package. No upstream NOTICE file is present in this release tree."
+}

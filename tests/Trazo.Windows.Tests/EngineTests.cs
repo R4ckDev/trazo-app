@@ -55,6 +55,13 @@ namespace Trazo
                 assertions+=HistorySettingsTests.Run();
                 assertions+=HistoryExportTests.Run();
                 assertions+=UiSettingsTests.Run();
+                assertions+=CaptureDimensionsTests.Run();
+                assertions+=FloatingCaptureTests.Run();
+                assertions+=PinIntegrationTests.Run();
+                assertions+=VersionRoutingTests.Run();
+                assertions+=BarcodeDecoderTests.Run();
+                assertions+=BarcodeResultsUiTests.Run();
+                assertions+=BarcodeIntegrationTests.Run();
                 Console.WriteLine("PASS: "+assertions+" checks (capture, annotations, editing, windows, projects and effects)");return 0;
             }
             catch(Exception e){Console.Error.WriteLine(e);return 1;}

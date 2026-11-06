@@ -1,8 +1,8 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version='0.2.0',
+    [string]$Version='0.4.0',
     [switch]$SkipBuild,
-    [string]$BinaryDirectory=(Join-Path (Split-Path -Parent $PSScriptRoot) 'dist\windows\app')
+    [string]$BinaryDirectory=(Join-Path (Split-Path -Parent $PSScriptRoot) 'build\windows\app')
 )
 
 $ErrorActionPreference='Stop'
@@ -17,6 +17,9 @@ $backup=Join-Path $release ('.previous-package-'+[Guid]::NewGuid().ToString('N')
 $entries=@(
     @{Source=(Join-Path $BinaryDirectory 'Trazo.exe');Name='Trazo.exe'},
     @{Source=(Join-Path $BinaryDirectory 'Trazo.exe.config');Name='Trazo.exe.config'},
+    @{Source=(Join-Path $BinaryDirectory 'zxing.dll');Name='zxing.dll'},
+    @{Source=(Join-Path $BinaryDirectory 'licenses\ZXing.Net\LICENSE.txt');Name='licenses/ZXing.Net/LICENSE.txt'},
+    @{Source=(Join-Path $BinaryDirectory 'licenses\ZXing.Net\provenance.json');Name='licenses/ZXing.Net/provenance.json'},
     @{Source=(Join-Path $projectRoot 'README.md');Name='README.md'},
     @{Source=(Join-Path $projectRoot 'LICENSE');Name='LICENSE'},
     @{Source=(Join-Path $projectRoot 'CONTRIBUTING.md');Name='CONTRIBUTING.md'},

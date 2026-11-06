@@ -1,8 +1,8 @@
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.4.0"
 #endif
 #ifndef BinaryDirectory
-  #define BinaryDirectory AddBackslash(SourcePath) + "..\..\dist\windows\app"
+  #define BinaryDirectory AddBackslash(SourcePath) + "..\..\build\windows\app"
 #endif
 #ifndef AppIdOverride
   #define AppIdOverride "{{D7113995-7A5F-4D2D-9C6B-82A314667E5B}"
@@ -85,9 +85,15 @@ Name: "desktopicon"; Description: "{cm:DesktopTask}"; GroupDescription: "{cm:Ins
 Name: "startup"; Description: "{cm:StartupTask}"; GroupDescription: "{cm:InstallOptions}"
 Name: "fileassoc"; Description: "{cm:AssociationTask}"; GroupDescription: "{cm:InstallOptions}"; Flags: unchecked
 
+[InstallDelete]
+Type: files; Name: "{app}\tests\fixtures\scrolling-capture.html"
+
 [Files]
 Source: "{#BinaryDirectory}\Trazo.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinaryDirectory}\Trazo.exe.config"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BinaryDirectory}\zxing.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BinaryDirectory}\licenses\ZXing.Net\LICENSE.txt"; DestDir: "{app}\licenses\ZXing.Net"; Flags: ignoreversion
+Source: "{#BinaryDirectory}\licenses\ZXing.Net\provenance.json"; DestDir: "{app}\licenses\ZXing.Net"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\CONTRIBUTING.md"; DestDir: "{app}"; Flags: ignoreversion

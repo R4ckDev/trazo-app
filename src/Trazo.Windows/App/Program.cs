@@ -33,6 +33,10 @@ namespace Trazo
             {
                 if (!firstInstance)
                 {
+                    if(!exit&&!IsVersionRunning(Application.ProductVersion))
+                    {
+                        MessageBox.Show("Estás abriendo Trazo "+Application.ProductVersion+", pero sigue abierta una instancia de otra versión.\n\nCierra Trazo completamente desde su icono junto al reloj y vuelve a abrir esta versión.","Trazo · Otra versión abierta",MessageBoxButtons.OK,MessageBoxIcon.Information);return;
+                    }
                     try
                     {
                         if(openPath!=null)WritePendingProject(openPath);
@@ -51,6 +55,7 @@ namespace Trazo
                     using (EventWaitHandle captureRequest = new EventWaitHandle(false, EventResetMode.AutoReset, CaptureEventName))
                     using(EventWaitHandle showRequest=new EventWaitHandle(false,EventResetMode.AutoReset,ShowEventName))
                     using(EventWaitHandle exitRequest=new EventWaitHandle(false,EventResetMode.AutoReset,ExitEventName))
+                    using(EventWaitHandle versionMarker=new EventWaitHandle(false,EventResetMode.ManualReset,VersionMarkerName(Application.ProductVersion)))
                     using (MainForm main = new MainForm(captureRequest))
                     using(System.Windows.Forms.Timer requests=new System.Windows.Forms.Timer { Interval=200 })
                     {
@@ -68,6 +73,12 @@ namespace Trazo
                 }
                 finally { mutex.ReleaseMutex(); }
             }
+        }
+        internal static string VersionMarkerName(string version){return "Local\\Trazo.Running.Version."+version;}
+        internal static bool IsVersionRunning(string version)
+        {
+            try{using(EventWaitHandle marker=EventWaitHandle.OpenExisting(VersionMarkerName(version)))return true;}
+            catch(WaitHandleCannotBeOpenedException){return false;}
         }
         private static void WritePendingProject(string path)
         {
