@@ -12,6 +12,7 @@ namespace Trazo
         internal const int WM_SYSKEYDOWN = 0x0104;
         internal const int WM_SYSKEYUP = 0x0105;
         internal const int WM_HOTKEY = 0x0312;
+        internal const int WM_CAPTURE_SHORTCUT = 0x8051;
         internal const int VK_SNAPSHOT = 0x2C;
         internal const int HOTKEY_ID = 0x5452;
         internal const uint MOD_NOREPEAT = 0x4000;

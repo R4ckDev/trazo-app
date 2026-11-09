@@ -4,7 +4,7 @@
 
 Una aplicación de código abierto para capturar áreas y ventanas en Windows, editar imágenes y organizar tus capturas recientes.
 
-**[Descargar instalador para Windows](https://github.com/R4ckDev/trazo-app/releases/download/v0.4.0/Trazo-v0.4.0-setup.exe)** · [Versión portátil](https://github.com/R4ckDev/trazo-app/releases/download/v0.4.0/Trazo-v0.4.0-windows.zip) · [Ver releases](https://github.com/R4ckDev/trazo-app/releases/latest)
+**[Descargar instalador para Windows](https://github.com/R4ckDev/trazo-app/releases/download/v0.4.1/Trazo-v0.4.1-setup.exe)** · [Versión portátil](https://github.com/R4ckDev/trazo-app/releases/download/v0.4.1/Trazo-v0.4.1-windows.zip) · [Ver releases](https://github.com/R4ckDev/trazo-app/releases/latest)
 
 ![Ventana principal de Trazo](docs/dashboard.png)
 

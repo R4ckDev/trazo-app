@@ -20,7 +20,6 @@ namespace Trazo
         private readonly NotifyIcon tray;
         private readonly ContextMenuStrip trayMenu;
         private readonly Label shortcutStatus,historyStatus;
-        private readonly Native.LowLevelKeyboardProc hookCallback;
         private readonly Icon ownIcon;
         private readonly ToolTip dashboardTips=new ToolTip();
         private readonly FlowLayoutPanel gallery;
@@ -31,10 +30,8 @@ namespace Trazo
         private readonly List<FloatingCaptureForm> floatingCaptures=new List<FloatingCaptureForm>();
         private AppSettings appSettings;
         private CaptureRecord selectedRecord;
-        private IntPtr keyboardHook;
+        private GlobalShortcutListener shortcutListener;
         private readonly HashSet<int> registeredHotkeys=new HashSet<int>();
-        private readonly HashSet<int> ownedKeys=new HashSet<int>();
-        private readonly HashSet<int> passedKeys=new HashSet<int>();
         private ShortcutSettings shortcutSettings;
         private bool configuringShortcuts,captureQueued,capturing,exiting,disposed,trayNoticeShown;
 
@@ -97,7 +94,7 @@ namespace Trazo
 
             trayMenu=new ContextMenuStrip();trayMenu.Items.Add("Capturar pantalla",null,delegate{BeginCapture(false);});trayMenu.Items.Add("Leer QR y códigos de barras…",null,delegate{BeginCapture(false,true);});trayMenu.Items.Add("Mostrar Trazo",null,delegate{ShowMain();});trayMenu.Items.Add("Configuración…",null,delegate{ConfigureSettings();});trayMenu.Items.Add("Abrir proyecto…",null,delegate{OpenProject();});trayMenu.Items.Add(new ToolStripSeparator());trayMenu.Items.Add("Cerrar Trazo",null,delegate{ExitTrazo();});
             tray=new NotifyIcon{Icon=ownIcon,Text="Trazo · Capturar pantalla",Visible=!previewMode,ContextMenuStrip=trayMenu};tray.DoubleClick+=delegate{ShowMain();};
-            hookCallback=KeyboardHook;requestTimer=new System.Windows.Forms.Timer{Interval=180};requestTimer.Tick+=delegate{if(captureRequest!=null&&captureRequest.WaitOne(0))BeginCapture(false);};
+            requestTimer=new System.Windows.Forms.Timer{Interval=180};requestTimer.Tick+=delegate{if(captureRequest!=null&&captureRequest.WaitOne(0))BeginCapture(false);};
             Shown+=delegate{if(!previewMode){Rectangle work=Screen.FromControl(this).WorkingArea;if(Width>work.Width||Height>work.Height){Size=new Size(Math.Min(Width,work.Width),Math.Min(Height,work.Height));Location=new Point(work.Left+(work.Width-Width)/2,work.Top+(work.Height-Height)/2);}InstallShortcut();requestTimer.Start();}};
             FormClosing+=OnClosing;Resize+=delegate{Padding=WindowState==FormWindowState.Maximized?Padding.Empty:new Padding(ResizeBorderWidth);if(!previewMode&&WindowState==FormWindowState.Minimized)HideToTray(false);};
             RefreshHistory();
@@ -117,14 +114,15 @@ namespace Trazo
         internal void OpenProjectFile(string path)
         {
             if(capturing||configuringShortcuts||exiting||IsDisposed)return;
-            capturing=true;UnregisterFallbacks();
+            capturing=true;
             try
             {
+                UnregisterFallbacks();
                 using(ProjectData data=ProjectStore.Load(path))
                 {Hide();using(OverlayForm overlay=new OverlayForm(data)){ShowEditor(overlay);}}
             }
             catch(Exception error){MessageBox.Show(this,"No se pudo abrir el proyecto.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
-            finally{capturing=false;if(!previewMode&&!exiting&&!IsDisposed){InstallShortcut();ShowMain();}}
+            finally{CompleteCaptureOperation(InstallShortcut);if(!previewMode&&!exiting&&!IsDisposed)ShowMain();}
         }
         private void HideToTray(bool notify)
         {
@@ -205,9 +203,10 @@ namespace Trazo
         private void EditSelected(){if(selectedRecord!=null)EditRecord(selectedRecord);}
         private void EditRecord(CaptureRecord record)
         {
-            if(capturing||configuringShortcuts||exiting)return;capturing=true;UnregisterFallbacks();
+            if(capturing||configuringShortcuts||exiting)return;capturing=true;
             try
             {
+                UnregisterFallbacks();
                 using(ProjectData data=new ProjectData())
                 {
                     using(Image file=Image.FromFile(record.FullPath))data.Screenshot=new Bitmap(file);
@@ -216,7 +215,7 @@ namespace Trazo
                 }
             }
             catch(Exception error){MessageBox.Show(this,"No se pudo editar la captura.\n"+error.Message,"Trazo",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
-            finally{capturing=false;if(!previewMode&&!exiting){InstallShortcut();ShowMain();}}
+            finally{CompleteCaptureOperation(InstallShortcut);if(!previewMode&&!exiting&&!IsDisposed)ShowMain();}
         }
         private void CopySelected()
         {
@@ -248,9 +247,10 @@ namespace Trazo
         private readonly string historyDirectory;
         private void ConfigureSettings()
         {
-            if(capturing||configuringShortcuts||exiting||previewMode)return;configuringShortcuts=true;UnregisterFallbacks();
+            if(capturing||configuringShortcuts||exiting||previewMode)return;configuringShortcuts=true;
             try
             {
+                UnregisterFallbacks();
                 bool oldStartup=StartupRegistration.IsEnabled();string oldStartupCommand=StartupRegistration.ReadCommand();
                 using(SettingsForm dialog=new SettingsForm(appSettings,historyDirectory,oldStartup,delegate{EditShortcutsFromSettings();}))
                 {
@@ -270,24 +270,29 @@ namespace Trazo
         {using(ShortcutSettingsForm dialog=new ShortcutSettingsForm(shortcutSettings))if(dialog.ShowDialog(this)==DialogResult.OK)shortcutSettings=dialog.ResultSettings;}
         private void InstallShortcut()
         {
+            if(previewMode)return;
             UnregisterFallbacks();
+            // Windows can silently retire a hook after a timeout. A stored handle
+            // does not prove that it is still receiving keys: always replace it.
+            int[] heldShortcutKeys=new int[0];
+            if(shortcutListener!=null){shortcutListener.Dispose();heldShortcutKeys=shortcutListener.SnapshotOwnedKeys;shortcutListener=null;}
             if(shortcutSettings.Shortcuts.Count==0)
             {
-                if(keyboardHook!=IntPtr.Zero){Native.UnhookWindowsHookEx(keyboardHook);keyboardHook=IntPtr.Zero;}
                 shortcutStatus.Text="Sin atajos activos. Usa el botón Capturar.";shortcutStatus.ForeColor=Color.FromArgb(110,119,130);return;
             }
-            if(keyboardHook==IntPtr.Zero)keyboardHook=Native.SetWindowsHookEx(Native.WH_KEYBOARD_LL,hookCallback,Native.GetModuleHandle(null),0);
+            shortcutListener=new GlobalShortcutListener(Handle,shortcutSettings.Shortcuts.ToArray(),heldShortcutKeys);
+            bool listenerInstalled=shortcutListener.Start();
             List<string> failures=new List<string>();
             for(int i=0;i<shortcutSettings.Shortcuts.Count;i++)
             {
                 Keys shortcut=shortcutSettings.Shortcuts[i];
-                // Los atajos con Win se reservan con Windows para conservar su comportamiento de modificador.
-                if(keyboardHook!=IntPtr.Zero&&(shortcut&ShortcutSettings.WindowsModifier)==0)continue;
+                // Keep an OS registration as an independent backup wherever it
+                // is available; the listener suppresses the original key event.
                 uint modifiers=Native.MOD_NOREPEAT;
                 if((shortcut&Keys.Alt)!=0)modifiers|=1;if((shortcut&Keys.Control)!=0)modifiers|=2;if((shortcut&Keys.Shift)!=0)modifiers|=4;if((shortcut&ShortcutSettings.WindowsModifier)!=0)modifiers|=8;
                 int id=Native.HOTKEY_ID+i;
                 if(Native.RegisterHotKey(Handle,id,modifiers,(uint)(shortcut&Keys.KeyCode)))registeredHotkeys.Add(id);
-                else failures.Add(ShortcutSettings.Format(shortcut)+": "+new Win32Exception(Marshal.GetLastWin32Error()).Message);
+                else if(!listenerInstalled||(shortcut&ShortcutSettings.WindowsModifier)!=0)failures.Add(ShortcutSettings.Format(shortcut)+": "+new Win32Exception(Marshal.GetLastWin32Error()).Message);
             }
             if(failures.Count>0)
             {
@@ -303,45 +308,21 @@ namespace Trazo
         }
         private void UnregisterFallbacks()
         {
+            if(shortcutListener!=null)shortcutListener.SetEnabled(false);
             if(IsHandleCreated)foreach(int id in registeredHotkeys)Native.UnregisterHotKey(Handle,id);
             registeredHotkeys.Clear();
         }
         private void ConfigureShortcuts()
         {
             if(capturing||configuringShortcuts||exiting||IsDisposed)return;
-            configuringShortcuts=true;UnregisterFallbacks();
+            configuringShortcuts=true;
             try
             {
+                UnregisterFallbacks();
                 using(ShortcutSettingsForm dialog=new ShortcutSettingsForm(shortcutSettings))
                     if(dialog.ShowDialog(this)==DialogResult.OK)shortcutSettings=dialog.ResultSettings;
             }
             finally { configuringShortcuts=false;if(!exiting&&!IsDisposed)InstallShortcut(); }
-        }
-
-        private IntPtr KeyboardHook(int code, IntPtr wParam, IntPtr lParam)
-        {
-            if (code >= 0 && !exiting && !IsDisposed)
-            {
-                Native.KeyboardData key = (Native.KeyboardData)Marshal.PtrToStructure(lParam, typeof(Native.KeyboardData));
-                int keyCode=(int)key.vkCode,message=wParam.ToInt32();
-                bool down=message==Native.WM_KEYDOWN||message==Native.WM_SYSKEYDOWN;
-                bool up=message==Native.WM_KEYUP||message==Native.WM_SYSKEYUP;
-                if(up&&ownedKeys.Remove(keyCode))return new IntPtr(1);
-                if(up&&passedKeys.Remove(keyCode))return Native.CallNextHookEx(keyboardHook,code,wParam,lParam);
-                if(down&&ownedKeys.Contains(keyCode))return new IntPtr(1);
-                if(down&&passedKeys.Contains(keyCode))return Native.CallNextHookEx(keyboardHook,code,wParam,lParam);
-                // Las teclas del editor y del cuadro de configuración siguen disponibles aunque sean atajos globales.
-                Keys modifiers=Native.ReadShortcutModifiers();
-                bool enabled=!capturing&&!configuringShortcuts&&(modifiers&ShortcutSettings.WindowsModifier)==0;
-                if(down)
-                {
-                    if(enabled&&shortcutSettings.Matches(keyCode,modifiers)){ownedKeys.Add(keyCode);QueueCapture();return new IntPtr(1);}
-                    passedKeys.Add(keyCode);
-                }
-                // Algunos teclados emiten únicamente la liberación de la tecla de captura.
-                if(up&&keyCode==Native.VK_SNAPSHOT&&enabled&&shortcutSettings.Matches(keyCode,modifiers)){QueueCapture();return new IntPtr(1);}
-            }
-            return Native.CallNextHookEx(keyboardHook, code, wParam, lParam);
         }
 
         private void QueueCapture()
@@ -358,6 +339,11 @@ namespace Trazo
             }
             catch (InvalidOperationException) { captureQueued = false; }
         }
+        internal void CompleteCaptureOperation(Action rearmShortcuts)
+        {
+            capturing=false;captureQueued=false;
+            if(!exiting&&!IsDisposed&&rearmShortcuts!=null)rearmShortcuts();
+        }
 
         protected override void WndProc(ref Message message)
         {
@@ -369,7 +355,7 @@ namespace Trazo
                 int hit=left&&top?13:right&&top?14:left&&bottom?16:right&&bottom?17:left?10:right?11:top?12:bottom?15:0;
                 if(hit!=0){message.Result=new IntPtr(hit);return;}
             }
-            if (message.Msg == Native.WM_HOTKEY && registeredHotkeys.Contains(message.WParam.ToInt32()))
+            if(message.Msg==Native.WM_CAPTURE_SHORTCUT||(message.Msg==Native.WM_HOTKEY&&registeredHotkeys.Contains(message.WParam.ToInt32())))
             {
                 QueueCapture();
                 return;
@@ -382,11 +368,15 @@ namespace Trazo
         {
             if (capturing || configuringShortcuts || exiting || IsDisposed) return;
             capturing = true;
-            UnregisterFallbacks();
             bool showAfter = restoreMain && Visible && WindowState != FormWindowState.Minimized;
+            List<FloatingCaptureForm> hiddenFloating=new List<FloatingCaptureForm>();
+            System.Windows.Forms.Timer delay=null;
+            try
+            {
+            UnregisterFallbacks();
             if(codes||appSettings.HideMainDuringCapture)Hide();
-            List<FloatingCaptureForm> hiddenFloating=HideFloatingCaptures();
-            System.Windows.Forms.Timer delay = new System.Windows.Forms.Timer { Interval = 180 };
+            hiddenFloating=HideFloatingCaptures();
+            delay = new System.Windows.Forms.Timer { Interval = 180 };
             delay.Tick += delegate
             {
                 delay.Stop();
@@ -414,21 +404,26 @@ namespace Trazo
                 }
                 finally
                 {
-                    capturing = false;
-                    RestoreFloatingCaptures(hiddenFloating);
-                    if(!exiting&&!IsDisposed)InstallShortcut();
-                    if (showAfter && !exiting && !IsDisposed) ShowMain();
+                    try{CompleteCaptureOperation(InstallShortcut);}
+                    finally{RestoreFloatingCaptures(hiddenFloating);if(showAfter&&!exiting&&!IsDisposed)ShowMain();}
                 }
             };
             delay.Start();
+            }
+            catch(Exception error)
+            {
+                if(delay!=null){delay.Stop();delay.Dispose();}
+                try{CompleteCaptureOperation(InstallShortcut);}finally{RestoreFloatingCaptures(hiddenFloating);if(showAfter&&!exiting&&!IsDisposed)ShowMain();}
+                if(!exiting&&!IsDisposed)tray.ShowBalloonTip(7000,"Trazo · No se pudo iniciar la captura",error.Message,ToolTipIcon.Error);
+            }
         }
         internal void OpenProject()
         {
             if (capturing || configuringShortcuts || exiting || IsDisposed) return;
             capturing = true;
-            UnregisterFallbacks();
             try
             {
+                UnregisterFallbacks();
                 using (OpenFileDialog dialog = new OpenFileDialog())
                 {
                     dialog.Title = "Abrir proyecto · Trazo";
@@ -452,8 +447,7 @@ namespace Trazo
             }
             finally
             {
-                capturing = false;
-                if(!exiting&&!IsDisposed)InstallShortcut();
+                CompleteCaptureOperation(InstallShortcut);
                 if (!exiting && !IsDisposed) ShowMain();
             }
         }
@@ -506,7 +500,7 @@ namespace Trazo
                 disposed = true;
                 exiting = true;
                 foreach(FloatingCaptureForm floating in floatingCaptures.ToArray())floating.Dispose();floatingCaptures.Clear();
-                if (keyboardHook != IntPtr.Zero) { Native.UnhookWindowsHookEx(keyboardHook); keyboardHook = IntPtr.Zero; }
+                if(shortcutListener!=null){shortcutListener.Dispose();shortcutListener=null;}
                 UnregisterFallbacks();
                 requestTimer.Stop();
                 requestTimer.Dispose();
